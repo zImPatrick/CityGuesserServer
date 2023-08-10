@@ -8,6 +8,7 @@ class Room extends EventEmitter {
 	current_round = 0
 	settings = {
 		timePerGame: 1, // Minuten
+		tpgString: "",
 		rounds: 1, // Runden
 	}
 	endRoundTimeout = 0
@@ -50,6 +51,12 @@ class Room extends EventEmitter {
 			this.players.splice(index, 1);
 			this.emitNumOfPlayers();
 		}
+
+		if (this.players.length == 0) {
+			console.log("Shutting down room, no players left")
+			rooms.splice(rooms.indexOf(this), 1);
+			delete this;
+		}
 	}
 
 	startNewRound(host_round) {
@@ -58,6 +65,7 @@ class Room extends EventEmitter {
 
 		let player_info = {};
 		for (let player of this.players) {
+			player.has_guessed_this_round = false;
 			player_info[player.socketId] = [player.username, player.score, 0x696969]
 		}
 		
@@ -68,30 +76,39 @@ class Room extends EventEmitter {
 
 		this.emit("start-game-notify", {
 			rounds: this.settings.rounds,
-			t_p_g: this.settings.timePerGame,
+			t_p_g: this.settings.tpgString,
 			current_round: this.current_round,
-			random_num: Math.floor(Math.random() * 100),
+			random_num: Math.floor(Math.random() * 965), // Es sind 966 Videos in der Liste
 
 			player_info: player_info,
 			room_contents: {
 				sockets: socketsThingy
 			}
 		});
-
-		this.endRoundTimeout = setTimeout(() => this.endRound(), this.settings.timePerGame * 60 * 1000);
+		console.log(this.settings);
+		console.log("Ending round in ", this.settings.timePerGame * 60 * 1000 + 4000, "ms")
+		this.endRoundTimeout = setTimeout(() => this.endRound(), this.settings.timePerGame * 60 * 1000 + 4000);
+		// 4000ms wegen dem Timer am Anfang
 	}
 
 	finishedGuessing(playerClass, { current_score, guessing_point, distance_between }) {
+		playerClass.score_went_up_this_round_by = current_score - playerClass.score;
 		playerClass.score = current_score;
 		playerClass.guessing_point = guessing_point;
 		playerClass.distance = distance_between;
-		playerClass.score_went_up_this_round_by = score_grader(distance_between);
+		playerClass.has_guessed_this_round = true;
 
 		this.emit("update-guess", {
 			intentional_exit: false,
 			socket_id: playerClass.socketId,
-			distance: distance_between
+			distance: distance_between,
+			nickname: playerClass.username
 		});
+
+		if (this.players.every(player => player.has_guessed_this_round)) {
+			console.log("Everyone has guessed; ending round");
+			this.endRound();
+		}
 	}
 
 	endRound() {
@@ -162,6 +179,7 @@ io.on('connection', socket => {
 	socket.on('create_room', ({ time, username, room_id }) => {
 		const room = new Room(room_id);
 		room.settings.timePerGame = time;
+		room.settings.tpgString = time;
 		rooms.push(room);
 		
 		// -- Für den Fall
@@ -179,7 +197,8 @@ io.on('connection', socket => {
 	});
 
 	socket.on("join_room", ({ room_id, username, userid }) => {
-		currentRoom = rooms.find(e => e.roomId === parseInt(room_id));
+		room_id = isNaN(parseInt(room_id)) ? room_id : parseInt(room_id);
+		currentRoom = rooms.find(e => e.roomId === room_id);
 		if (!currentRoom) {
 			socket.emit(ClientSideEvents.ROOM_DONT_EXIST);
 			return;
@@ -189,7 +208,19 @@ io.on('connection', socket => {
 	});
 
 	socket.on('begin_game', ({ time_per_guess, rounds, host_round }) => {
-		currentRoom.settings.timePerGame = String(time_per_guess)[0]; // die machen das so lol
+		// die machen das so lol
+		switch (time_per_guess) {
+			case "15 seconds":
+				currentRoom.settings.timePerGame = 15 / 60;
+				break;
+			case "1 minute 30 seconds":
+				currentRoom.settings.timePerGame = 90 / 60;
+				break;
+			default:
+				currentRoom.settings.timePerGame = parseInt(time_per_guess);
+				break;
+		}
+		currentRoom.settings.tpgString = time_per_guess;
 		currentRoom.settings.rounds = rounds;
 
 		currentRoom.startNewRound(host_round);
